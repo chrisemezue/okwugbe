@@ -1,5 +1,6 @@
 torch
 torchaudio
+sklearn
 datasets==1.12.1
 colorama
 ipython==5.5.0

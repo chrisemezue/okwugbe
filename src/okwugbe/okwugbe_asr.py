@@ -46,7 +46,7 @@ class OkwugbeDataset(torch.utils.data.Dataset):
         return data
 
     def load_audio_item(self, d: list):
-        utterance = d[1]
+        utterance = str(d[1])
         wav_path = d[0]
         waveform, sample_rate = torchaudio.load(wav_path)
         return waveform, utterance,wav_path

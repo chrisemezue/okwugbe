@@ -1,0 +1,5 @@
+*__pycahce__/*
+slurm*
+job.sh
+*.csv
+src/okwugbe/__pycache__/*
