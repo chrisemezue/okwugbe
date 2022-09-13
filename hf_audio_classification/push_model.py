@@ -46,9 +46,10 @@ model = AutoModelForAudioClassification.from_pretrained(
 
 
 
-model.load_state_dict(torch.load(PATH))
+model.load_state_dict(torch.load(PATH,map_location=torch.device('cpu')))
 
-model.push_to_hub(save_name)
+model.push_to_hub(f"chrisjay/{save_name}")
+feature_extractor.push_to_hub(f"chrisjay/{save_name}")
 print('ALL DONE')
 
-#python push_model.py /home/mila/c/chris.emezue/scratch/afr/AFRO_sna_wav.pth afrospeech-wav2vec-sna
+#python push_model.py /home/mila/c/chris.emezue/scratch/afr/AFRO_sna_wav.pth chrisjay/afrospeech-wav2vec-sna

@@ -3,3 +3,6 @@ slurm*
 job.sh
 *.csv
 src/okwugbe/__pycache__/*
+
+# Ignore files pushed to Hub
+hf_audio_classification/chrisjay/
