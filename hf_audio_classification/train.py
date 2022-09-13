@@ -1,12 +1,3 @@
-
-
-
-'''
-%%capture
-!pip install datasets==1.14
-!pip install transformers==4.11.3
-!pip install librosa
-'''
 import os, sys
 import numpy as np
 import random
@@ -75,22 +66,26 @@ else:
 print(f"Using {device}")
 
 SAMPLE_RATE = 48000
-FILE_NAME = sys.argv[3]
+FILE_NAME = sys.argv[1]
 SAVE_PATH = f'/home/mila/c/chris.emezue/scratch/afr/{FILE_NAME}.pth'
-EVAL_STEP=5
-train_path = sys.argv[1]
-test_path = sys.argv[2]
+EVAL_STEP=1
+train_path = sys.argv[2]
+try:
+    test_path = sys.argv[3]
+except IndexError:
+    # The test path was not provided.
+    test_path = None     
 
 LOSS_JSON_FILE = f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/loss_{FILE_NAME}.json'
 ACC_JSON_FILE = f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/val_acc_{FILE_NAME}.json'
 
 LEARNING_RATE = 3e-5
-EPOCHS = 15
+EPOCHS = 50
 
 
 #Preprocessing the data
 feature_extractor = AutoFeatureExtractor.from_pretrained(model_checkpoint)
-max_duration = 1.0  # seconds
+max_duration = 2.0  # seconds
 
 
 usd,valid_dataset,test_dataset=  get_dataset(feature_extractor,
@@ -125,9 +120,12 @@ optimiser = torch.optim.Adam(model.parameters(),
                                 lr=LEARNING_RATE)
 
 # train model
-train(model, train_dataloader,valid_dataloader,test_dataloader, loss_fn, optimiser, device, EPOCHS,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP)
-test_acc = evaluate(model, test_dataloader,device)
-print(f"Test accuracy is {test_acc}")
+train(model, train_dataloader,valid_dataloader, loss_fn, optimiser, device, EPOCHS,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP)
+if test_dataloader is not None:
+    test_acc = evaluate(model, test_dataloader,device)
+    print(f"Test accuracy is {test_acc}")
+else:
+    print(f"No test dataset was provided! So not performing evaluation on test.")
 
 print('ALL DONE')
 

@@ -20,28 +20,34 @@ class OkwugbeDataset(torch.utils.data.Dataset):
         self.transformation = transformation
         self.target_sample_rate = target_sample_rate
         self.num_samples = target_sample_rate
+        self.original_data = None
 
         self.train, self.validation, self.test = self.load_data()
         if datatype.lower() == 'train':
             self.data = self.get_data(self.train, datatype)
+            self.original_data = self.train
 
         if datatype.lower() == 'valid':
             self.data = self.get_data(self.validation, datatype)
-
+            self.original_data = self.validation
         if datatype.lower() == 'test':
-            self.data = self.get_data(self.test, datatype)
+            if self.test is not None: 
+                self.data = self.get_data(self.test, datatype)
+                self.original_data = self.test
+            else:
+                raise Exception(f"No test data was provided! Cannot request for test data")
+
 
         """datatype could be either 'test', 'train' or 'valid' """
 
     def load_data(self):
-        train = pd.read_csv(self.train_path)
-        test = pd.read_csv(self.test_path)
-        validation, testing = train_test_split(train, test_size=self.validation_size)
+        training = pd.read_csv(self.train_path)
+        testing = pd.read_csv(self.test_path) if self.test_path is not None else None
+        train,validation = train_test_split(training, test_size=self.validation_size)
         return train, validation, testing
 
     def get_data(self, dataset, datatype):
         data = dataset.to_numpy()
-        data = [data[i] for i in range(len(data)) if i != 0]
         print('{} set size: {}'.format(datatype.upper(), len(data)))
         return data
 

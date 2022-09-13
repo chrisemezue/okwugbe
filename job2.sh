@@ -18,3 +18,9 @@ python train.py /home/mila/c/chris.emezue/okwugbe/all_except_ibo_test.csv /home/
 
 
 
+#Igbo - ibo
+#Oshiwambo - kua
+#Yoruba - yor
+#Oromo (although note all of these audios are from female) - gax
+#Shona (all male) - sna
+#Rundi (all male) - run

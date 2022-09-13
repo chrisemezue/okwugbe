@@ -4,7 +4,7 @@ import json
 import torch
 import torchaudio
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from okwugbedataset import OkwugbeDataset
 #from urbansounddataset import OkwugbeDataset
 #from cnn import CNNNetwork
@@ -16,8 +16,53 @@ def dump_json(thing,file):
 
 
 
+def get_weighted_sampler(train_data_):
+    # https://towardsdatascience.com/pytorch-basics-sampling-samplers-2a0f29f0bf2a
+    train_data = train_data_.original_data
+
+    if train_data is None:
+        return None
+
+    unique_langs = train_data['lang_code'].unique().tolist() 
+    
+    if len(unique_langs)<=1:
+        # Only one language, do not do weighted sampling
+        return None   
+    lang_count = [train_data[train_data['lang_code']==k].shape[0] for k in unique_langs]
+    lang_weight = [1/c for c in lang_count]
+
+    weight_lang_dict = {l:w for l,w in zip(unique_langs,lang_weight)}
+
+    def get_lang_weight(lang):
+        return weight_lang_dict[lang]
+
+    train_data['lang_weight'] = train_data['lang_code'].apply(lambda x: get_lang_weight(x))    
+
+    language_weights_for_data =  train_data['lang_weight'].values.tolist()
+
+    weighted_sampler = WeightedRandomSampler(
+    weights=language_weights_for_data,
+    num_samples=len(language_weights_for_data),
+    replacement=True
+        )
+
+    return weighted_sampler    
+
+
 def create_data_loader(train_data, batch_size):
-    train_dataloader = DataLoader(train_data, batch_size=batch_size)
+    if train_data is not None:
+        weighted_sampler = get_weighted_sampler(train_data)
+
+        if weighted_sampler is not None:
+            print('='*30)
+            print('Using weighted sampler')
+            print('='*30)
+
+            train_dataloader = DataLoader(train_data, batch_size=batch_size,shuffle=False,sampler=weighted_sampler)
+        else:    
+            train_dataloader = DataLoader(train_data, batch_size=batch_size)
+    else:
+        train_dataloader = None
     return train_dataloader
 
 
@@ -41,7 +86,7 @@ def train_single_epoch(model, data_loader, loss_fn, optimiser, device):
 
     return loss_item
 
-def train(model, data_loader,valid_dataloader,test_dataloader, loss_fn, optimiser, device, epochs,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP):
+def train(model, data_loader,valid_dataloader,loss_fn, optimiser, device, epochs,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP):
     best_acc = 0
     for i in range(epochs):
         print(f"Epoch {i}")
@@ -117,12 +162,15 @@ def get_dataset(mel_spectogram,SAMPLE_RATE,device,train_path,test_path):
                             test_path,
                             'valid',
                             device)
-    test_dataset = OkwugbeDataset(mel_spectogram,
+    if test_path is not None:
+        test_dataset = OkwugbeDataset(mel_spectogram,
                             SAMPLE_RATE,
                             train_path,
                             test_path,
                             'test',
                             device)
+    else: 
+        test_dataset = None
 
     return usd,valid_dataset,test_dataset
 

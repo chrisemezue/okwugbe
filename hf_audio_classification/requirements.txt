@@ -1,0 +1,3 @@
+datasets==1.14
+transformers==4.11.3
+librosa

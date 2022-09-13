@@ -14,7 +14,9 @@ module load python/3
 source /home/mila/c/chris.emezue/scratch/okwugbe-afr/bin/activate
 
 cd /home/mila/c/chris.emezue/okwugbe/hf_audio_classification
-#python train.py /home/mila/c/chris.emezue/okwugbe/all_except_ibo_test.csv /home/mila/c/chris.emezue/okwugbe/test_ibo.csv afro_ibo_300_all 
+
+#python train.py afro_ibo_300_all /home/mila/c/chris.emezue/okwugbe/lang_specific/igbo_ibo_audio_data.csv /home/mila/c/chris.emezue/okwugbe/test_ibo.csv  
+
 python train.py $1 $2 $3
 
 
