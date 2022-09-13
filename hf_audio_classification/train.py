@@ -12,18 +12,6 @@ from utils import get_dataset, create_data_loader,train,evaluate
 
 
 
-def preprocess_function(examples):
-    audio_arrays = [x["array"] for x in examples["audio"]]
-    inputs = feature_extractor(
-        audio_arrays, 
-        sampling_rate=feature_extractor.sampling_rate, 
-        max_length=int(feature_extractor.sampling_rate * max_duration), 
-        truncation=True, 
-    )
-    return inputs
-
-
-
 model_checkpoint = "facebook/wav2vec2-base"
 batch_size = 32
 num_labels = 10
@@ -80,7 +68,7 @@ LOSS_JSON_FILE = f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/los
 ACC_JSON_FILE = f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/val_acc_{FILE_NAME}.json'
 
 LEARNING_RATE = 3e-5
-EPOCHS = 50
+EPOCHS = 500
 
 
 #Preprocessing the data
