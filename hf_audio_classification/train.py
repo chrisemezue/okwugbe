@@ -1,19 +1,25 @@
 import os, sys
+import json
 import numpy as np
 import random
 import torch
+import seaborn as sns
+from collections import Counter
+import pandas as pd
+from sklearn.metrics import confusion_matrix,f1_score
+import seaborn as sns
+import matplotlib.pyplot as plt
 from torch import nn
-from transformers import AutoFeatureExtractor
-from IPython.display import Audio, display
-from transformers import AutoModelForAudioClassification, TrainingArguments, Trainer
+from transformers import AutoModelForAudioClassification, AutoFeatureExtractor
 from datasets import load_dataset, load_metric
 from okwugbedataset import OkwugbeDataset
 from utils import get_dataset, create_data_loader,train,evaluate
 
 
+CM_PATH = '/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/metrics'
 
 model_checkpoint = "facebook/wav2vec2-base"
-batch_size = 32
+batch_size = 64
 num_labels = 10
 
 metric = load_metric("accuracy")
@@ -26,25 +32,6 @@ for i, label in enumerate(labels):
     label2id[label] = str(i)
     id2label[str(i)] = label
 
-
-"""
-
-To get a sense of what the commands sound like, the following snippet will render 
-some audio examples picked randomly from the dataset. 
-
-
-
-
-for _ in range(5):
-    rand_idx = random.randint(0, len(dataset["train"])-1)
-    example = dataset["train"][rand_idx]
-    audio = example["audio"]
-
-    print(f'Label: {id2label[str(example["label"])]}')
-    print(f'Shape: {audio["array"].shape}, sampling rate: {audio["sampling_rate"]}')
-    display(Audio(audio["array"], rate=audio["sampling_rate"]))
-    print()
-"""
 
 
 if torch.cuda.is_available():
@@ -68,31 +55,107 @@ LOSS_JSON_FILE = f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/los
 ACC_JSON_FILE = f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/val_acc_{FILE_NAME}.json'
 
 LEARNING_RATE = 3e-5
-EPOCHS = 500
-
+EPOCHS = 150
 
 #Preprocessing the data
+
 feature_extractor = AutoFeatureExtractor.from_pretrained(model_checkpoint)
 max_duration = 2.0  # seconds
 
 
+
+def plot_bar(value,name,x_name,y_name,title):
+    fig, ax = plt.subplots(tight_layout=True)
+
+    ax.set(xlabel=x_name, ylabel=y_name,title=title)
+
+    ax.barh(name, value)
+   
+  
+    return ax.figure 
+'''    
+# get distribution of train dataset
+df_bar = pd.read_csv(train_path)
+
+digits_dict = Counter(df_bar['transcript'].values.tolist())
+
+digits_name_for_language = list(digits_dict.keys())
+digits_count_for_language = [digits_dict[k] for k in digits_name_for_language]
+plt_digits = plot_bar(digits_count_for_language,digits_name_for_language,'Number of audio samples',"Digit",f"Audio samples over digits ({FILE_NAME.upper()}) ")
+
+plt_digits.savefig(os.path.join(CM_PATH,f'digits-bar-plot-for-{FILE_NAME}.png'))
+'''
 usd,valid_dataset,test_dataset=  get_dataset(feature_extractor,
                                                 16000,
                                                 device,
                                                 train_path,
                                                 test_path)
 # Create dataloader
-train_dataloader = create_data_loader(usd, batch_size)
+#train_dataloader = create_data_loader(usd, batch_size)
 valid_dataloader = create_data_loader(valid_dataset, batch_size)
-test_dataloader = create_data_loader(test_dataset, batch_size)
+#test_dataloader = create_data_loader(test_dataset, batch_size)
 
 """
 To apply this function on all utterances in our dataset, we just use the `map` method of our `dataset` object we created earlier. This will apply the function on all the elements of all the splits in `dataset`, so our training, validation and testing data will be preprocessed in one single command.
 """
 
+def evaluate_full(model, data_loader,device,type_):
+    if type_ not in ['valid','test']:
+        raise Exception(f"`type_` must be either `test` or `valid`!")
+
+
+    # Get acc, f1 and confusion matrix
+    model.eval()
+    with torch.no_grad():
+        acc=[]
+
+        preds, targets = [],[]
+        for input, target in data_loader:
+
+
+            input, target = input.to(device), target.to(device)
+
+
+            # calculate accuracy
+            prediction = model(input).logits
+            predicted_index = prediction.argmax(1)
+
+            preds.extend(predicted_index.cpu().numpy().tolist())
+            targets.extend(target.cpu().numpy().tolist())
+
+            train_acc = torch.sum(predicted_index == target).cpu().item()
+            final_train_acc = train_acc/input.shape[0]
+            acc.append(final_train_acc)
+    
+    final_acc = sum(acc)/len(acc) 
+    f1_scores = f1_score(targets, preds, average='weighted').tolist() 
+
+
+    # Creating  a confusion matrix,which compares the y_test and y_pred
+    cm = confusion_matrix(targets, preds)
+
+    # Creating a dataframe for a array-formatted Confusion matrix,so it will be easy for plotting.
+    cm_df = pd.DataFrame(cm)
+                        
+    #Plotting the confusion matrix
+    plt.figure()
+    sns.heatmap(cm_df, annot=True)
+    plt.title(f'Confusion Matrix ({FILE_NAME.upper()}) ({type_.upper()})')
+    plt.ylabel('Actual Values')
+    plt.xlabel('Predicted Values')
+    plt.savefig(os.path.join(CM_PATH,f'{FILE_NAME.lower()}_confusion_matrix_{type_.upper()}.png'))
+
+    data = {'acc':final_acc,'f1':f1_scores}
+    METRICS_FILE = os.path.join(CM_PATH,f'{FILE_NAME.lower()}_METRICS_{type_.upper()}.json')
+    with open(METRICS_FILE,'w+') as file_:
+        json.dump(data,file_)
+
+    return final_acc
+
 
 
 # construct model and assign it to device
+
 model = AutoModelForAudioClassification.from_pretrained(
     model_checkpoint, 
     num_labels=num_labels,
@@ -100,6 +163,11 @@ model = AutoModelForAudioClassification.from_pretrained(
     id2label=id2label,
 ).to(device)
 
+MULTILINGUAL_MODEL_PATH = '/home/mila/c/chris.emezue/scratch/afr/afrospeech-wav2vec-all-6.pth'
+if os.path.exists(MULTILINGUAL_MODEL_PATH):
+    print('Using pretrained multilingual model.......................')
+    model_saved = torch.load(MULTILINGUAL_MODEL_PATH)
+    model.load_state_dict(model_saved)
 
 
 # initialise loss funtion + optimiser
@@ -107,58 +175,18 @@ loss_fn = nn.CrossEntropyLoss()
 optimiser = torch.optim.Adam(model.parameters(),
                                 lr=LEARNING_RATE)
 
+
 # train model
-train(model, train_dataloader,valid_dataloader, loss_fn, optimiser, device, EPOCHS,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP)
+train(model, train_dataloader,valid_dataloader, loss_fn, optimiser, device, EPOCHS,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP,feature_extractor)
+
+_ = evaluate_full(model, train_dataloader,device,'valid')
 if test_dataloader is not None:
-    test_acc = evaluate(model, test_dataloader,device)
+    test_acc = evaluate_full(model, test_dataloader,device,'test')
     print(f"Test accuracy is {test_acc}")
 else:
     print(f"No test dataset was provided! So not performing evaluation on test.")
 
+
+model.push_to_hub(f"chrisjay/{FILE_NAME.lower()}")
+feature_extractor.push_to_hub(f"chrisjay/{FILE_NAME.lower()}")
 print('ALL DONE')
-
-
-
-'''
-
-model_name = model_checkpoint.split("/")[-1]
-
-args = TrainingArguments(
-    f"{model_name}-finetuned-afros-speech",
-    evaluation_strategy = "epoch",
-    save_strategy = "epoch",
-    learning_rate=3e-5,
-    per_device_train_batch_size=batch_size,
-    gradient_accumulation_steps=4,
-    per_device_eval_batch_size=batch_size,
-    num_train_epochs=5,
-    warmup_ratio=0.1,
-    logging_steps=10,
-    load_best_model_at_end=True,
-    metric_for_best_model="accuracy",
-    push_to_hub=False,
-)
-
-
-
-
-def compute_metrics(eval_pred):
-    """Computes accuracy on a batch of predictions"""
-    predictions = np.argmax(eval_pred.predictions, axis=1)
-    return metric.compute(predictions=predictions, references=eval_pred.label_ids)
-
-
-trainer = Trainer(
-    model,
-    args,
-    train_dataset=encoded_dataset["train"],
-    eval_dataset=encoded_dataset["validation"],
-    tokenizer=feature_extractor,
-    compute_metrics=compute_metrics
-)    
-
-
-
-trainer.train()
-
-'''

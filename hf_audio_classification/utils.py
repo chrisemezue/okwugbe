@@ -5,7 +5,7 @@ import torch
 import torchaudio
 from torch import nn
 from torch.utils.data import DataLoader, WeightedRandomSampler
-from okwugbedataset import OkwugbeDataset
+from okwugbedataset_eval import OkwugbeDataset
 #from urbansounddataset import OkwugbeDataset
 #from cnn import CNNNetwork
 
@@ -49,6 +49,35 @@ def get_weighted_sampler(train_data_):
     return weighted_sampler    
 
 
+
+
+def pad_sequence(batch):
+    # Make all tensor in a batch the same length by padding with zeros
+    batch = [item.t() for item in batch]
+    batch = torch.nn.utils.rnn.pad_sequence(batch, batch_first=True, padding_value=0.)
+    return batch
+
+
+def collate_fn(batch):
+
+    # A data tuple has the form:
+    # waveform, utterance
+
+    tensors, targets = [], []
+
+    # Gather in lists, and encode labels as indices
+    for waveform, label in batch:
+        tensors += [waveform.squeeze()]
+        targets += [label]
+
+    # Group the list of tensors into a batched tensor
+    tensors = pad_sequence(tensors)
+    targets = torch.Tensor(targets).type(torch.LongTensor)
+
+    return tensors, targets
+
+
+
 def create_data_loader(train_data, batch_size):
     if train_data is not None:
         weighted_sampler = get_weighted_sampler(train_data)
@@ -58,23 +87,23 @@ def create_data_loader(train_data, batch_size):
             print('Using weighted sampler')
             print('='*30)
 
-            train_dataloader = DataLoader(train_data, batch_size=batch_size,shuffle=False,sampler=weighted_sampler)
+            train_dataloader = DataLoader(train_data, batch_size=batch_size,shuffle=False,sampler=weighted_sampler,collate_fn=collate_fn)
         else:    
-            train_dataloader = DataLoader(train_data, batch_size=batch_size)
+            train_dataloader = DataLoader(train_data, batch_size=batch_size,collate_fn=collate_fn)
     else:
         train_dataloader = None
     return train_dataloader
 
 
-def train_single_epoch(model, data_loader, loss_fn, optimiser, device):
+def train_single_epoch(model, data_loader, loss_fn, optimiser, device,feature_extractor):
     model.train()
     _ = iter(data_loader).next()
     for input, target in data_loader:
-
-        input, target = input.input_values[0].squeeze().to(device), target.to(device)
+        input, target = input.to(device), target.to(device)
 
         # calculate loss
         prediction = model(input)
+
         loss = loss_fn(prediction.logits, target)
 
         # backpropagate error and update weights
@@ -86,11 +115,11 @@ def train_single_epoch(model, data_loader, loss_fn, optimiser, device):
 
     return loss_item
 
-def train(model, data_loader,valid_dataloader,loss_fn, optimiser, device, epochs,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP):
+def train(model, data_loader,valid_dataloader,loss_fn, optimiser, device, epochs,SAVE_PATH,LOSS_JSON_FILE,ACC_JSON_FILE,EVAL_STEP,feature_extractor):
     best_acc = 0
     for i in range(epochs):
         print(f"Epoch {i}")
-        loss_item = train_single_epoch(model, data_loader, loss_fn, optimiser, device)
+        loss_item = train_single_epoch(model, data_loader, loss_fn, optimiser, device,feature_extractor)
 
         if os.path.exists(LOSS_JSON_FILE):
             with open(LOSS_JSON_FILE,'r') as f:
@@ -134,7 +163,7 @@ def evaluate(model, data_loader,device):
         for input, target in data_loader:
 
 
-            input, target = input.input_values[0].squeeze().to(device), target.to(device)
+            input, target = input.to(device), target.to(device)
 
 
             # calculate accuracy
@@ -149,21 +178,22 @@ def evaluate(model, data_loader,device):
     
     return final_acc
 
-def get_dataset(mel_spectogram,SAMPLE_RATE,device,train_path,test_path):
-    usd = OkwugbeDataset(mel_spectogram,
+
+def get_dataset(transformation,SAMPLE_RATE,device,train_path,test_path):
+    usd = OkwugbeDataset(transformation,
                             SAMPLE_RATE,
                             train_path,
                             test_path,
                             'train',
                             device)
-    valid_dataset = OkwugbeDataset(mel_spectogram,
+    valid_dataset = OkwugbeDataset(transformation,
                             SAMPLE_RATE,
                             train_path,
                             test_path,
                             'valid',
                             device)
     if test_path is not None:
-        test_dataset = OkwugbeDataset(mel_spectogram,
+        test_dataset = OkwugbeDataset(transformation,
                             SAMPLE_RATE,
                             train_path,
                             test_path,

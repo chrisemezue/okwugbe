@@ -1,8 +1,10 @@
 import os
 import torch
+import warnings
 from torch.utils.data import Dataset
 import pandas as pd
 import torchaudio
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 
 class OkwugbeDataset(torch.utils.data.Dataset):
@@ -11,7 +13,13 @@ class OkwugbeDataset(torch.utils.data.Dataset):
     data_type could be either 'test', 'train' or 'valid'
     """
 
-    def __init__(self,transformation,target_sample_rate, train_path, test_path, datatype,device, validation_size=0.15):
+    def __init__(self,transformation,
+                target_sample_rate: int = None, 
+                train_path: str =None,
+                test_path: str = None,
+                datatype: str = None,
+                device: str = None, 
+                validation_size: float =0.2):
         super(OkwugbeDataset, self).__init__()
         self.train_path = train_path
         self.test_path = test_path
@@ -21,8 +29,18 @@ class OkwugbeDataset(torch.utils.data.Dataset):
         self.target_sample_rate = target_sample_rate
         self.num_samples = target_sample_rate
         self.original_data = None
+        self.datatype = datatype.lower()
 
-        self.train, self.validation, self.test = self.load_data()
+        if self.train_path==None:
+            raise Exception(f"`train_path` cannot be empty! You provided no path to training dataset.")
+        if self.datatype =='test':
+            if self.test_path==None:
+                warnings.warn(f"You provided no test set. test set will be set to None and not testing evaluation will be done.")
+                self.test = None
+            else:
+                self.test = self.load_data(self.test_path,False)
+
+        self.train, self.validation = self.load_data(self.train_path)
         if datatype.lower() == 'train':
             self.data = self.get_data(self.train, datatype)
             self.original_data = self.train
@@ -30,21 +48,35 @@ class OkwugbeDataset(torch.utils.data.Dataset):
         if datatype.lower() == 'valid':
             self.data = self.get_data(self.validation, datatype)
             self.original_data = self.validation
+            # Save the validation file
+            VALID_FILE_NAME = Path(self.train_path).name
+            self.save_pandas_to_csv(self.validation,f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/validation_data/VALID_{VALID_FILE_NAME}')  
+
         if datatype.lower() == 'test':
             if self.test is not None: 
                 self.data = self.get_data(self.test, datatype)
                 self.original_data = self.test
+                # Save the test data
+                VALID_FILE_NAME = Path(self.test_path).name
+                self.save_pandas_to_csv(self.test,f'/home/mila/c/chris.emezue/okwugbe/hf_audio_classification/validation_data/TEST_{VALID_FILE_NAME}')  
+
             else:
                 raise Exception(f"No test data was provided! Cannot request for test data")
 
 
         """datatype could be either 'test', 'train' or 'valid' """
 
-    def load_data(self):
-        training = pd.read_csv(self.train_path)
-        testing = pd.read_csv(self.test_path) if self.test_path is not None else None
-        train,validation = train_test_split(training, test_size=self.validation_size)
-        return train, validation, testing
+    def load_data(self,path,split=True):
+        training = pd.read_csv(path)
+
+        if split:
+            train,validation = train_test_split(training, test_size=self.validation_size,random_state=20)
+            return train, validation
+        else:
+            return training
+
+    def save_pandas_to_csv(self,df,filepath):
+        df.to_csv(filepath,index=False)
 
     def get_data(self, dataset, datatype):
         data = dataset.to_numpy()
@@ -56,12 +88,14 @@ class OkwugbeDataset(torch.utils.data.Dataset):
         wav_path = d[0]
         waveform, sample_rate = torchaudio.load(wav_path)
         waveform = waveform.to(self.device)
+
         waveform = self._resample_if_necessary(waveform, sample_rate)
-        waveform = self._mix_down_if_necessary(waveform)
-        waveform = self._cut_if_necessary(waveform)
-        waveform = self._right_pad_if_necessary(waveform)
-        transformed = self.transformation(waveform,sampling_rate=self.transformation.sampling_rate, max_length=16000, truncation=True)
-        return transformed, utterance
+        waveform = self.transformation(waveform,
+                                    sampling_rate=self.transformation.sampling_rate, 
+                                    max_length=16_000, 
+                                    truncation=True,
+                                    return_tensors="pt")
+        return waveform.input_values, utterance
 
     def __getitem__(self, n: int):
         """Load the n-th sample from the dataset.
